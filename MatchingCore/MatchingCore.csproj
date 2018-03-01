@@ -86,7 +86,6 @@
       <DependentUpon>ProjectInstaller.cs</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RabbitMqObj.cs" />
     <Compile Include="RequestFromClient.cs" />
     <Compile Include="TxOutput.cs" />
   </ItemGroup>
