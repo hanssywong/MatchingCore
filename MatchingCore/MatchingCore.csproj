@@ -76,6 +76,7 @@
     <Compile Include="MatchingCoreSetup.cs" />
     <Compile Include="MatchingOrderResult.cs" />
     <Compile Include="MsmqObj.cs" />
+    <Compile Include="OrderPool.cs" />
     <Compile Include="ProcessRequest.cs" />
     <Compile Include="ProcessOrder.cs" />
     <Compile Include="Program.cs" />
@@ -88,6 +89,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RequestFromClient.cs" />
     <Compile Include="TxOutput.cs" />
+    <Compile Include="TxPool.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

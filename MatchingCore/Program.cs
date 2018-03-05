@@ -16,6 +16,7 @@ namespace MatchingCore
                 string.Compare(ConfigurationManager.AppSettings["RunAsDebugConsole"], "true", StringComparison.OrdinalIgnoreCase) == 0)
             {
                 MatchingCoreSetup.Instance.Init();
+                Task.Factory.StartNew(() => ProcessRequest.Instance.callback());
                 Console.ReadKey(true);
                 MatchingCoreSetup.Instance.Shutdown();
             }

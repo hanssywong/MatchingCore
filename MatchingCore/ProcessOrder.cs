@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MatchingCore
@@ -19,11 +20,6 @@ namespace MatchingCore
         /// Singleton
         /// </summary>
         internal static ProcessOrder Instance { get; } = new ProcessOrder();
-        [Obsolete]
-        /// <summary>
-        /// Orders matched, so product transaction, transaction put into queue for further process
-        /// </summary>
-        BlockingCollection<List<Transaction>> TxOut { get; } = new BlockingCollection<List<Transaction>>(10000);
         /// <summary>
         /// Prices depth are included for matching
         /// </summary>
@@ -49,52 +45,17 @@ namespace MatchingCore
         /// </summary>
         List<double> askL { get; } = new List<double>(5000);
         /// <summary>
-        /// Transaction Obj Pool
-        /// </summary>
-        objPool<TxOutput> txPool { get; } = new objPool<TxOutput>(() => new TxOutput(), 100000);
-        /// <summary>
-        /// Order Obj Pool
-        /// </summary>
-        objPool<Order> orderPool { get; } = new objPool<Order>(() => new Order(), 2000000);
-        [Obsolete]
-        /// <summary>
-        /// Transactions List Pool
-        /// </summary>
-        objPool<List<TxOutput>> txListPool { get; } = new objPool<List<TxOutput>>(() => new List<TxOutput>());
-        /// <summary>
         /// Order ID to Order Map
         /// </summary>
         Dictionary<string, Order> idToOrderMap { get; } = new Dictionary<string, Order>();
-        double? highestBid { get; set; } = null;
-        double? lowestAsk { get; set; } = null;
-        /// <summary>
-        /// Thread safe, check in a buffer
-        /// </summary>
-        /// <param name="order"></param>
-        internal void OrderPoolCheckIn(Order order)
-        {
-            orderPool.Checkin(order);
-        }
-        /// <summary>
-        /// Thread safe, check in a buffer
-        /// </summary>
-        /// <param name="tx"></param>
-        internal void TxPoolCheckIn(TxOutput tx)
-        {
-            txPool.Checkin(tx);
-        }
-
-        internal Order OrderPoolCheckOut()
-        {
-            var order = orderPool.Checkout();
-            return order;
-        }
+        internal double? highestBid { get; private set; } = null;
+        internal double? lowestAsk { get; private set; } = null;
 
         internal void CheckAllOrNothing(RequestFromClient request)
         {
             Order order = request.order;
             MatchingOrderResult ret = request.result;
-            Order aon = orderPool.Checkout();
+            Order aon = OrderPool.Checkout();
             aon.fv = order.fv;
             aon.p = order.p;
             aon.t = order.t;
@@ -198,8 +159,7 @@ namespace MatchingCore
             {
                 ret.Success = false;
             }
-            aon.ResetObj();
-            orderPool.Checkin(aon);
+            OrderPool.Checkin(aon);
 
             if (PriceList.Count > 0) PriceList.Clear();
         }
@@ -317,7 +277,7 @@ namespace MatchingCore
                                 sell.fv += buySideVol;
                                 order.fv = order.v;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.bt = order.id;
                                 tran.p = askList[PriceList[p]][i].p;
                                 tran.st = askList[PriceList[p]][i].id;
@@ -337,7 +297,7 @@ namespace MatchingCore
                                 removeOrder.fv = removeOrder.v;
                                 order.fv = order.v;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.bt = order.id;
                                 tran.p = removeOrder.p;
                                 tran.st = removeOrder.id;
@@ -345,7 +305,7 @@ namespace MatchingCore
                                 tran.dt = DateTime.Now;
                                 tran.init = Transaction.InitiatorType.Buy;
                                 txList.Add(tran);
-                                orderPool.Checkin(removeOrder);
+                                OrderPool.Checkin(removeOrder);
                             }
                             else//sellSideVol < buySideVol
                             {
@@ -358,7 +318,7 @@ namespace MatchingCore
                                 removeOrder.fv = removeOrder.v;
                                 order.fv += sellSideVol;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.bt = order.id;
                                 tran.p = removeOrder.p;
                                 tran.st = removeOrder.id;
@@ -366,7 +326,7 @@ namespace MatchingCore
                                 tran.dt = DateTime.Now;
                                 tran.init = Transaction.InitiatorType.Buy;
                                 txList.Add(tran);
-                                orderPool.Checkin(removeOrder);
+                                OrderPool.Checkin(removeOrder);
                             }
                             #endregion
                         }
@@ -422,7 +382,7 @@ namespace MatchingCore
                                 buy.fv += sellSideVol;
                                 order.fv = order.v;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.st = order.id;
                                 tran.p = bidList[PriceList[p]][i].p;
                                 tran.bt = bidList[PriceList[p]][i].id;
@@ -442,7 +402,7 @@ namespace MatchingCore
                                 removeOrder.fv = removeOrder.v;
                                 order.fv = order.v;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.st = order.id;
                                 tran.p = removeOrder.p;
                                 tran.bt = removeOrder.id;
@@ -450,7 +410,7 @@ namespace MatchingCore
                                 tran.dt = DateTime.Now;
                                 tran.init = Transaction.InitiatorType.Sell;
                                 txList.Add(tran);
-                                orderPool.Checkin(removeOrder);
+                                OrderPool.Checkin(removeOrder);
                             }
                             else//buySideVol < sellSideVol
                             {
@@ -463,7 +423,7 @@ namespace MatchingCore
                                 removeOrder.fv = removeOrder.v;
                                 order.fv += buySideVol;
 
-                                TxOutput tran = txPool.Checkout();
+                                TxOutput tran = TxPool.Checkout();
                                 tran.st = order.id;
                                 tran.p = removeOrder.p;
                                 tran.bt = removeOrder.id;
@@ -471,7 +431,7 @@ namespace MatchingCore
                                 tran.dt = DateTime.Now;
                                 tran.init = Transaction.InitiatorType.Sell;
                                 txList.Add(tran);
-                                orderPool.Checkin(removeOrder);
+                                OrderPool.Checkin(removeOrder);
                             }
                             #endregion
                         }
@@ -525,15 +485,51 @@ namespace MatchingCore
                     #endregion
                     ret.CanRecycle = false;
                 }
-                ret.errorType = ProcessOrderResult.ErrorType.PartialFill;
-            }
-            else
-            {
-                ret.errorType = ProcessOrderResult.ErrorType.Success;
             }
 
             if (PriceList.Count > 0) PriceList.Clear();
             ret.Success = true;
+            ret.errorType = ProcessOrderResult.ErrorType.Success;
+        }
+
+        internal int GetBidDepthLevel()
+        {
+            return this.bidL.Count;
+        }
+        internal int GetAskDepthLevel()
+        {
+            return this.askL.Count;
+        }
+
+        internal IList<double> GetHighest5Bids()
+        {
+            List<double> list = null;
+            if (bidL.Count >= 5)
+            {
+                list = new List<double>(bidL.GetRange(bidL.Count - 6, 5));
+            }
+            else if (bidL.Count == 0) return new List<double>();
+            else
+            {
+                list = new List<double>(bidL);
+            }
+            list.Reverse();
+            return list.ToArray();
+        }
+
+        internal IList<double> GetLowest5Asks()
+        {
+            List<double> list = null;
+            if (askL.Count >= 5)
+            {
+                list = new List<double>(askL.GetRange(0, 5));
+            }
+            else if (askL.Count == 0) return new List<double>();
+            else
+            {
+                list = new List<double>(askL);
+            }
+            return list.ToArray();
         }
     }
 }
