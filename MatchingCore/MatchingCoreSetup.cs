@@ -21,6 +21,7 @@ namespace MatchingCore
         {
             cts.Cancel();
             ProcessRequest.Instance.Shutdown();
+            LibraryLogger.Instance.Shutdown();
         }
 
         //internal InMsmqObj outMsmq { get; } = new InMsmqObj(ConfigurationManager.AppSettings["OutMsmqName"]);
