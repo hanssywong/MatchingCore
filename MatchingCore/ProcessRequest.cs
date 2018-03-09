@@ -18,13 +18,14 @@ namespace MatchingCore
         internal static ProcessRequest Instance { get; } = new ProcessRequest();
         BlockingCollection<RequestFromClient> RequestQueue { get; } = new BlockingCollection<RequestFromClient>();
         BlockingCollection<RequestFromClient> ResponseQueue { get; } = new BlockingCollection<RequestFromClient>();
-        objPool<RequestFromClient> requestFcPools { get; } = new objPool<RequestFromClient>(() => new RequestFromClient(), 5000);
+        objPool<RequestFromClient> requestFcPools { get; } = new objPool<RequestFromClient>(() => new RequestFromClient(), 500);
         RabbitMqIn mqRequest { get; set; }
         RabbitMqOut mqOrderResponse { get; set; }
         RabbitMqOut mqTxResponse { get; set; }
         List<Task> tasksRunning { get; } = new List<Task>();
         ParallelOptions option { get; } = new ParallelOptions();
         int mqInCnt = 0;
+        int mqRejCnt = 0;
         /// <summary>
         /// Request per second
         /// </summary>
@@ -48,8 +49,9 @@ namespace MatchingCore
 
         internal void Init()
         {
-            option.MaxDegreeOfParallelism = 12;
-            mqRequest = new RabbitMqIn(ConfigurationManager.AppSettings["RabbitMqRequestUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqRequestQueueName"].ToString());
+            option.MaxDegreeOfParallelism = 2;
+            ushort prefetchCount = ushort.Parse(ConfigurationManager.AppSettings["prefetchCount"]);
+            mqRequest = new RabbitMqIn(ConfigurationManager.AppSettings["RabbitMqRequestUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqRequestQueueName"].ToString(), prefetchCount);
             mqRequest.BindReceived(MqInHandler);
             mqOrderResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqOrderResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqOrderResponseQueueName"].ToString());
             mqTxResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqTxResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqTxResponseQueueName"].ToString());
@@ -69,7 +71,7 @@ namespace MatchingCore
             {
                 RejectResponse(bytes);
                 //mqRequest.MsgFinished(ea);
-                Interlocked.Decrement(ref mqInCnt);
+                Interlocked.Increment(ref mqRejCnt);
                 return;
             }
             request.order = OrderPool.Checkout();
@@ -78,7 +80,6 @@ namespace MatchingCore
             if (!RequestQueue.TryAdd(request))
                 RejectResponse(bytes);
             //mqRequest.MsgFinished(ea);
-            Interlocked.Decrement(ref mqInCnt);
         }
 
         private void RejectResponse(byte[] bytes)
@@ -97,8 +98,8 @@ namespace MatchingCore
             {
                 try
                 {
-                    Parallel.ForEach(ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token), option, request =>
-                    //foreach (var request in ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token))
+                    //Parallel.ForEach(ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token), option, request =>
+                    foreach (var request in ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token))
                     {
                         //request = ResponseQueue.Take(MatchingCoreSetup.Instance.cts.Token);
                         #region send order response to order handling RabbitMQ
@@ -107,12 +108,14 @@ namespace MatchingCore
                         #endregion
 
                         #region send transaction to transaction handling RabbitMQ
-                        //for (int i = 0; i < request.result.txList.Count; i++)
+                        for (int i = 0; i < request.result.txList.Count; i++)
                         //Parallel.For(0, request.result.txList.Count, option, i =>
-                        //{
-                        //    mqTxResponse.Enqueue(request.result.txList[i]);
-                        //    //Interlocked.Increment(ref Tps);
-                        //});
+                        //Parallel.For(0, request.result.txList.Count, i =>
+                        {
+                            mqTxResponse.Enqueue(request.result.txList[i]);
+                            //Interlocked.Increment(ref Tps);
+                        }
+                        //);
                         #endregion
                         if (request.result.CanRecycle)
                         {
@@ -127,7 +130,7 @@ namespace MatchingCore
                         requestFcPools.Checkin(request);
                         //Interlocked.Increment(ref Rps);
                     }
-                    );
+                    //);
                 }
                 catch (OperationCanceledException)
                 {
@@ -256,9 +259,12 @@ namespace MatchingCore
                     Console.WriteLine("RequestQueue:" + RequestQueue.Count);
                     Console.WriteLine("ResponseQueue:" + ResponseQueue.Count);
                     Console.WriteLine("requestFcPools:" + requestFcPools.poolsize);
-                    Console.WriteLine("mqOrderResponse.channelPool:" + mqOrderResponse.channelPool.poolsize);
-                    Console.WriteLine("mqTxResponse.channelPool:" + mqTxResponse.channelPool.poolsize);
-                    Console.WriteLine("mqInCnt:" + mqInCnt);
+                    Console.WriteLine("PoolForResp:" + BinaryObjPool.PoolForResp.Pool.poolsize);
+                    Console.WriteLine("PoolForTx:" + BinaryObjPool.PoolForTx.Pool.poolsize);
+                    int tmp1 = Interlocked.Exchange(ref mqInCnt, 0);
+                    int tmp2 = Interlocked.Exchange(ref mqRejCnt, 0);
+                    Console.WriteLine("mqInCnt:" + tmp1);
+                    Console.WriteLine("mqRejCnt:" + tmp2);
                     //ops = 0;
                     //createTicks = 0;
                     //removeKeysTicks = 0;
