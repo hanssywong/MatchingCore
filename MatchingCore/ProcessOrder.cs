@@ -63,7 +63,6 @@ namespace MatchingCore
             if (aon.t == Order.OrderType.Buy && askList.Count > 0 && aon.p >= lowestAsk)
             {
                 #region Matching Buy
-                PriceList.Clear();
                 for (int i = 0; i < askL.Count; i++)
                 {
                     if (aon.p >= askL[i])
@@ -246,7 +245,6 @@ namespace MatchingCore
             if (order.t == Order.OrderType.Buy && askList.Count > 0 && order.p >= lowestAsk)
             {
                 #region Matching Buy
-                PriceList.Clear();
                 for (int i = 0; i < askL.Count; i++)
                 {
                     if (order.p >= askL[i])
