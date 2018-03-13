@@ -5,20 +5,21 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using MatchingLib;
-using LogHelper;
 using System.Configuration;
 using RabbitMQ.Client.Events;
 using Newtonsoft.Json;
 using System.Threading;
+using NLogHelper;
+using BaseHelper;
 
 namespace MatchingCore
 {
     internal class ProcessRequest
     {
         internal static ProcessRequest Instance { get; } = new ProcessRequest();
-        BlockingCollection<RequestFromClient> RequestQueue { get; } = new BlockingCollection<RequestFromClient>();
-        BlockingCollection<RequestFromClient> ResponseQueue { get; } = new BlockingCollection<RequestFromClient>();
-        objPool<RequestFromClient> requestFcPools { get; } = new objPool<RequestFromClient>(() => new RequestFromClient(), 500);
+        SpinQueue<RequestFromClient> RequestQueue { get; } = new SpinQueue<RequestFromClient>();
+        SpinQueue<RequestFromClient> ResponseQueue { get; } = new SpinQueue<RequestFromClient>();
+        objPool<RequestFromClient> requestFcPools { get; } = new objPool<RequestFromClient>(() => new RequestFromClient(), 5000);
         RabbitMqIn mqRequest { get; set; }
         RabbitMqOut mqOrderResponse { get; set; }
         RabbitMqOut mqTxResponse { get; set; }
@@ -41,6 +42,8 @@ namespace MatchingCore
 
         internal void Shutdown()
         {
+            RequestQueue.ShutdownGracefully();
+            ResponseQueue.ShutdownGracefully();
             mqRequest.Shutdown();
             mqOrderResponse.Shutdown();
             mqTxResponse.Shutdown();
@@ -77,15 +80,17 @@ namespace MatchingCore
             request.order = OrderPool.Checkout();
             request.result.order = request.order;
             request.FromBytes(bytes);
-            if (!RequestQueue.TryAdd(request))
+            if (!RequestQueue.Enqueue(request))
+            {
                 RejectResponse(bytes);
+            }
             //mqRequest.MsgFinished(ea);
         }
 
         private void RejectResponse(byte[] bytes)
         {
             //reject incoming orders, since we hit the limit
-            var reject = ProcessOrderResult.ConstructRejectBuffer(bytes);
+            var reject = ProcessOrderResult.ConstructRejectBuffer();
             mqOrderResponse.Enqueue(reject.bytes);
             ProcessOrderResult.CheckIn(reject);
             //Interlocked.Increment(ref Rejps);
@@ -98,8 +103,9 @@ namespace MatchingCore
             {
                 try
                 {
+                    RequestFromClient request = null;
                     //Parallel.ForEach(ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token), option, request =>
-                    foreach (var request in ResponseQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token))
+                    if (ResponseQueue.TryDequeue(out request))
                     {
                         //request = ResponseQueue.Take(MatchingCoreSetup.Instance.cts.Token);
                         #region send order response to order handling RabbitMQ
@@ -134,17 +140,17 @@ namespace MatchingCore
                 }
                 catch (OperationCanceledException)
                 {
-                    LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Info, "HandleResponse Thread shutting down");
+                    NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "HandleResponse Thread shutting down");
                 }
                 catch (Exception ex)
                 {
-                    LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Error, ex.ToString());
+                    NLogger.Instance.WriteLog(NLogger.LogLevel.Error, ex.ToString());
                 }
                 finally
                 {
                 }
             }
-            LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Info, "HandleResponse thread shutdown");
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "HandleResponse thread shutdown");
         }
 
         internal void HandleRequest()
@@ -153,8 +159,9 @@ namespace MatchingCore
             {
                 try
                 {
+                    RequestFromClient request = null;
                     //var request = RequestQueue.Take(MatchingCoreSetup.Instance.cts.Token);
-                    foreach (var request in RequestQueue.GetConsumingEnumerable(MatchingCoreSetup.Instance.cts.Token))
+                    if(RequestQueue.TryDequeue(out request))
                     {
                         if (request.type == RequestToMatching.RequestType.TradeOrder && (request.order.et == Order.ExecutionType.Limit || request.order.et == Order.ExecutionType.IoC))
                         {
@@ -198,16 +205,19 @@ namespace MatchingCore
                             ProcessOrder.Instance.DoCancel(request);
                         }
                         request.result.dt = DateTime.Now;
-                        ResponseQueue.Add(request);
+                        if(!ResponseQueue.Enqueue(request))
+                        {
+                            Console.WriteLine("Fail");
+                        }
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Info, "HandleRequest Thread shutting down");
+                    NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "HandleRequest Thread shutting down");
                 }
                 catch (Exception ex)
                 {
-                    LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Error, ex.ToString());
+                    NLogger.Instance.WriteLog(NLogger.LogLevel.Error, ex.ToString());
                 }
             }
         }
@@ -252,15 +262,8 @@ namespace MatchingCore
                     //Console.WriteLine(sortingTicks + " sorting ms");
                     //if (tmpMatching > 0) matchingTotal += tmpMatching;
                     //Console.WriteLine(matchingTotal + " matching total ms");
-                    Console.WriteLine(TxPool.Count + " tx pool size");
-                    Console.WriteLine(OrderPool.Count + " order pool size");
                     Console.WriteLine((ProcessOrder.Instance.lowestAsk == double.MaxValue ? 0 : ProcessOrder.Instance.lowestAsk) + " ask");
                     Console.WriteLine(ProcessOrder.Instance.highestBid + " bid");
-                    Console.WriteLine("RequestQueue:" + RequestQueue.Count);
-                    Console.WriteLine("ResponseQueue:" + ResponseQueue.Count);
-                    Console.WriteLine("requestFcPools:" + requestFcPools.poolsize);
-                    Console.WriteLine("PoolForResp:" + BinaryObjPool.PoolForResp.Pool.poolsize);
-                    Console.WriteLine("PoolForTx:" + BinaryObjPool.PoolForTx.Pool.poolsize);
                     int tmp1 = Interlocked.Exchange(ref mqInCnt, 0);
                     int tmp2 = Interlocked.Exchange(ref mqRejCnt, 0);
                     Console.WriteLine("mqInCnt:" + tmp1);

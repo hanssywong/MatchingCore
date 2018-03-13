@@ -1,4 +1,5 @@
-﻿using MatchingLib;
+﻿using BaseHelper;
+using MatchingLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,7 +14,6 @@ namespace MatchingCore
     internal class TxPool
     {
         static objPool<TxOutput> Pool { get; } = new objPool<TxOutput>(() => new TxOutput(), 100000);
-        internal static int Count { get { return Pool.poolsize; } }
         /// <summary>
         /// Single Thread only method
         /// </summary>

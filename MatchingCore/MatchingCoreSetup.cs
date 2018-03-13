@@ -1,5 +1,5 @@
-﻿using LogHelper;
-using MatchingLib;
+﻿using MatchingLib;
+using NLogHelper;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -21,14 +21,14 @@ namespace MatchingCore
         {
             cts.Cancel();
             ProcessRequest.Instance.Shutdown();
-            LibraryLogger.Instance.Shutdown();
+            NLogger.Instance.Shutdown();
         }
 
         //internal InMsmqObj outMsmq { get; } = new InMsmqObj(ConfigurationManager.AppSettings["OutMsmqName"]);
 
         internal void Init()
         {
-            LibraryLogger.Instance.Init(LogDirectory, "MT4MgrApiAdminService", Encoding.Default, LibraryLogger.libLogLevel.Debug);
+            NLogger.Instance.Init(LogDirectory, "MatchingCore", Encoding.Default, NLogger.LogLevel.Debug);
             ProcessRequest.Instance.Init();
         }
     }

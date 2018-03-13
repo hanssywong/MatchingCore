@@ -1,6 +1,6 @@
-﻿using LogHelper;
-using MatchingLib;
+﻿using MatchingLib;
 using Newtonsoft.Json;
+using NLogHelper;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -65,7 +65,7 @@ namespace MatchingCore
                     }
                     catch (Exception ex)
                     {
-                        LibraryLogger.Instance.WriteLog(LibraryLogger.libLogLevel.Error, ex.ToString());
+                        NLogger.Instance.WriteLog(NLogger.LogLevel.Error, ex.ToString());
                     }
                 }
 

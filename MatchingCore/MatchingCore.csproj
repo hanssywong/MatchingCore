@@ -97,13 +97,17 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\LogHelper\LogHelper\LogHelper.csproj">
-      <Project>{e4566dc8-ca5d-4b5b-ae24-0b488510ca2b}</Project>
-      <Name>LogHelper</Name>
+    <ProjectReference Include="..\..\BaseHelper\BaseHelper\BaseHelper.csproj">
+      <Project>{c2632e4d-e8fa-4bd8-bf85-2601c9f65ae0}</Project>
+      <Name>BaseHelper</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\MatchingLib\MatchingLib\MatchingLib.csproj">
       <Project>{87856ae8-eeba-4175-b78b-16a11b63f413}</Project>
       <Name>MatchingLib</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\NLogHelper\NLogHelper\NLogHelper.csproj">
+      <Project>{53e4e36b-0f39-4c42-ab7b-6ef01e34d880}</Project>
+      <Name>NLogHelper</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
