@@ -342,7 +342,7 @@ namespace MatchingCore
                         {
                             askList[PriceList[p]].RemoveRange(0, removeOrders.Count);
                         }
-                        removeOrders.Clear();
+                        if (removeOrders.Count > 0) removeOrders.Clear();
                     }
                 }
                 #endregion
@@ -447,7 +447,7 @@ namespace MatchingCore
                         {
                             bidList[PriceList[p]].RemoveRange(0, removeOrders.Count);
                         }
-                        removeOrders.Clear();
+                        if (removeOrders.Count > 0) removeOrders.Clear();
                     }
                 }
                 #endregion

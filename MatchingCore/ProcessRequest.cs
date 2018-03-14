@@ -80,10 +80,7 @@ namespace MatchingCore
             request.order = OrderPool.Checkout();
             request.result.order = request.order;
             request.FromBytes(bytes);
-            if (!RequestQueue.Enqueue(request))
-            {
-                RejectResponse(bytes);
-            }
+            RequestQueue.Enqueue(request);
             //mqRequest.MsgFinished(ea);
         }
 
@@ -120,16 +117,13 @@ namespace MatchingCore
                         {
                             mqTxResponse.Enqueue(request.result.txList[i]);
                             //Interlocked.Increment(ref Tps);
+                            TxPool.CheckIn(request.result.txList[i]);
                         }
                         //);
                         #endregion
                         if (request.result.CanRecycle)
                         {
                             OrderPool.Checkin(request.order);
-                        }
-                        foreach (var tx in request.result.txList)
-                        {
-                            TxPool.CheckIn(tx);
                         }
                         request.result.txList.Clear();
                         request.result.ResetObj();
@@ -205,10 +199,7 @@ namespace MatchingCore
                             ProcessOrder.Instance.DoCancel(request);
                         }
                         request.result.dt = DateTime.Now;
-                        if(!ResponseQueue.Enqueue(request))
-                        {
-                            Console.WriteLine("Fail");
-                        }
+                        ResponseQueue.Enqueue(request);
                     }
                 }
                 catch (OperationCanceledException)
@@ -268,6 +259,10 @@ namespace MatchingCore
                     int tmp2 = Interlocked.Exchange(ref mqRejCnt, 0);
                     Console.WriteLine("mqInCnt:" + tmp1);
                     Console.WriteLine("mqRejCnt:" + tmp2);
+                    Console.WriteLine("RequestQueue.bWritingQueueA:" + RequestQueue.bWritingQueueA);
+                    Console.WriteLine("RequestQueue.QueueCount:" + RequestQueue.QueueCount);
+                    Console.WriteLine("ResponseQueue.bWritingQueueA:" + ResponseQueue.bWritingQueueA);
+                    Console.WriteLine("ResponseQueue.QueueCount:" + ResponseQueue.QueueCount);
                     //ops = 0;
                     //createTicks = 0;
                     //removeKeysTicks = 0;

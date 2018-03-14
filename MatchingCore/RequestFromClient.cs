@@ -9,7 +9,7 @@ namespace MatchingCore
 {
     internal class RequestFromClient : RequestToMatching
     {
-        internal MatchingOrderResult result { get; set; } = new MatchingOrderResult() { txList = new List<TxOutput>() };
+        internal MatchingOrderResult result { get; set; } = new MatchingOrderResult() { txList = new List<TxOutput>(10000) };
         public new void FromBytes(byte[] bytes)
         {
             base.FromBytes(bytes);
