@@ -41,6 +41,7 @@ namespace MatchingCore
 
         internal void Shutdown()
         {
+            requestFcPools.Shutdown();
             RequestQueue.ShutdownGracefully();
             ResponseQueue.ShutdownGracefully();
             mqRequest.Shutdown();
@@ -56,6 +57,7 @@ namespace MatchingCore
             //mqRequest.BindReceived(MqInHandler);
             //mqOrderResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqOrderResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqOrderResponseQueueName"].ToString());
             //mqTxResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqTxResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqTxResponseQueueName"].ToString());
+            TcpServer.Server.StartListening(ConfigurationManager.AppSettings["RequestReceiverIP"].ToString(), int.Parse(ConfigurationManager.AppSettings["RequestReceiverPort"].ToString()));
             tasksRunning.Add(Task.Factory.StartNew(() => HandleRequest(), TaskCreationOptions.LongRunning));
             for (int i = 0; i < 1; i++)
             {

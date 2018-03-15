@@ -15,12 +15,12 @@ namespace MatchingCore
     /// <summary>
     /// TCP Server
     /// </summary>
-    public class TcpServer
+    public class RequestReceiver
     {
         /// <summary>
         /// Singleton
         /// </summary>
-        public static TcpServer Server { get; } = new TcpServer();
+        public static RequestReceiver Server { get; } = new RequestReceiver();
         TcpListener listener { get; set; }
         public List<Task> ReceiverTasks { get; } = new List<Task>(10);
         public List<Task> SendTasks { get; } = new List<Task>(10);
@@ -77,23 +77,9 @@ namespace MatchingCore
                         stream.Write(binObj.bytes, 0, binObj.length);
                     }
                 }
-                catch (OperationCanceledException)
-                {
-                    NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "ReceiverTask shutdown");
-                }
                 catch (Exception e)
                 {
                     NLogger.Instance.WriteLog(NLogger.LogLevel.Error, e.ToString());
-                }
-                finally
-                {
-                    if (!client.Connected)
-                    {
-                        NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "Socket close");
-                        client.Close();
-                        stream.Close();
-                        BinaryObjPool.Checkin(binObj);
-                    }
                 }
             }
         }
@@ -128,11 +114,15 @@ namespace MatchingCore
                 }
                 finally
                 {
-                    if (!client.Connected)
+                    if (client != null && !client.Connected)
                     {
-                        NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "Socket close");
+                        IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
+                        NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "Socket close on IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
                         client.Close();
+                        GC.SuppressFinalize(client);
+                        client = null;
                         stream.Close();
+                        GC.SuppressFinalize(stream);
                         bufferPool.Checkin(buffer);
                     }
                 }
@@ -144,14 +134,15 @@ namespace MatchingCore
         /// </summary>
         public void Shutdown()
         {
-            foreach(var s in ClientSockets)
+            foreach(var client in ClientSockets)
             {
-                if (s.Connected)
+                if (client != null && client.Connected)
                 {
-                    s.Client.Shutdown(SocketShutdown.Both);
+                    client.Client.Shutdown(SocketShutdown.Both);
                 }
-                s.Client.Close();
             }
+            Task.WaitAll(ReceiverTasks.ToArray());
+            Task.WaitAll(SendTasks.ToArray());
             listener.Stop();
         }
     }
