@@ -19,12 +19,11 @@ namespace MatchingCore
         internal static ProcessRequest Instance { get; } = new ProcessRequest();
         SpinQueue<RequestFromClient> RequestQueue { get; } = new SpinQueue<RequestFromClient>();
         SpinQueue<RequestFromClient> ResponseQueue { get; } = new SpinQueue<RequestFromClient>();
-        objPool<RequestFromClient> requestFcPools { get; } = new objPool<RequestFromClient>(() => new RequestFromClient(), 5000);
+        objPoolV2<RequestFromClient> requestFcPools { get; } = new objPoolV2<RequestFromClient>(() => new RequestFromClient(), 5000);
         RabbitMqIn mqRequest { get; set; }
         RabbitMqOut mqOrderResponse { get; set; }
         RabbitMqOut mqTxResponse { get; set; }
         List<Task> tasksRunning { get; } = new List<Task>();
-        ParallelOptions option { get; } = new ParallelOptions();
         int mqInCnt = 0;
         int mqRejCnt = 0;
         /// <summary>
@@ -52,12 +51,11 @@ namespace MatchingCore
 
         internal void Init()
         {
-            option.MaxDegreeOfParallelism = 2;
-            ushort prefetchCount = ushort.Parse(ConfigurationManager.AppSettings["prefetchCount"]);
-            mqRequest = new RabbitMqIn(ConfigurationManager.AppSettings["RabbitMqRequestUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqRequestQueueName"].ToString(), prefetchCount);
-            mqRequest.BindReceived(MqInHandler);
-            mqOrderResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqOrderResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqOrderResponseQueueName"].ToString());
-            mqTxResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqTxResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqTxResponseQueueName"].ToString());
+            //ushort prefetchCount = ushort.Parse(ConfigurationManager.AppSettings["prefetchCount"]);
+            //mqRequest = new RabbitMqIn(ConfigurationManager.AppSettings["RabbitMqRequestUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqRequestQueueName"].ToString(), prefetchCount);
+            //mqRequest.BindReceived(MqInHandler);
+            //mqOrderResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqOrderResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqOrderResponseQueueName"].ToString());
+            //mqTxResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqTxResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqTxResponseQueueName"].ToString());
             tasksRunning.Add(Task.Factory.StartNew(() => HandleRequest(), TaskCreationOptions.LongRunning));
             for (int i = 0; i < 1; i++)
             {
@@ -65,24 +63,37 @@ namespace MatchingCore
             }
         }
 
-        private void MqInHandler(object sender, BasicDeliverEventArgs ea)
+        internal void ReceiveRequest(RequestFromClient rfcObj)
         {
-            Interlocked.Increment(ref mqInCnt);
-            var bytes = ea.Body;
-            RequestFromClient request;
-            if(!requestFcPools.CheckoutLimited(out request))
-            {
-                RejectResponse(bytes);
-                //mqRequest.MsgFinished(ea);
-                Interlocked.Increment(ref mqRejCnt);
-                return;
-            }
-            request.order = OrderPool.Checkout();
-            request.result.order = request.order;
-            request.FromBytes(bytes);
-            RequestQueue.Enqueue(request);
-            //mqRequest.MsgFinished(ea);
+            RequestQueue.Enqueue(rfcObj);
         }
+
+        internal RequestFromClient GetRfcObj()
+        {
+            var rfcObj = requestFcPools.Checkout();
+            rfcObj.order = OrderPool.Checkout();
+            rfcObj.result.order = rfcObj.order;
+            return rfcObj;
+        }
+
+        //private void MqInHandler(object sender, BasicDeliverEventArgs ea)
+        //{
+        //    Interlocked.Increment(ref mqInCnt);
+        //    var bytes = ea.Body;
+        //    RequestFromClient request;
+        //    if(!requestFcPools.CheckoutLimited(out request))
+        //    {
+        //        RejectResponse(bytes);
+        //        //mqRequest.MsgFinished(ea);
+        //        Interlocked.Increment(ref mqRejCnt);
+        //        return;
+        //    }
+        //    request.order = OrderPool.Checkout();
+        //    request.result.order = request.order;
+        //    request.FromBytes(bytes);
+        //    RequestQueue.Enqueue(request);
+        //    //mqRequest.MsgFinished(ea);
+        //}
 
         private void RejectResponse(byte[] bytes)
         {
