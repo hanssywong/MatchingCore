@@ -84,9 +84,10 @@
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RequestFromClient.cs" />
-    <Compile Include="TcpServer.cs" />
+    <Compile Include="RequestReceiver.cs" />
     <Compile Include="TxOutput.cs" />
     <Compile Include="TxPool.cs" />
+    <Compile Include="TxDistributor.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

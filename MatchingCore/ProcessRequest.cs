@@ -20,9 +20,9 @@ namespace MatchingCore
         SpinQueue<RequestFromClient> RequestQueue { get; } = new SpinQueue<RequestFromClient>();
         SpinQueue<RequestFromClient> ResponseQueue { get; } = new SpinQueue<RequestFromClient>();
         objPoolV2<RequestFromClient> requestFcPools { get; } = new objPoolV2<RequestFromClient>(() => new RequestFromClient(), 5000);
-        RabbitMqIn mqRequest { get; set; }
-        RabbitMqOut mqOrderResponse { get; set; }
-        RabbitMqOut mqTxResponse { get; set; }
+        //RabbitMqIn mqRequest { get; set; }
+        //RabbitMqOut mqOrderResponse { get; set; }
+        //RabbitMqOut mqTxResponse { get; set; }
         List<Task> tasksRunning { get; } = new List<Task>();
         int mqInCnt = 0;
         int mqRejCnt = 0;
@@ -44,9 +44,9 @@ namespace MatchingCore
             requestFcPools.Shutdown();
             RequestQueue.ShutdownGracefully();
             ResponseQueue.ShutdownGracefully();
-            mqRequest.Shutdown();
-            mqOrderResponse.Shutdown();
-            mqTxResponse.Shutdown();
+            //mqRequest.Shutdown();
+            //mqOrderResponse.Shutdown();
+            //mqTxResponse.Shutdown();
             Task.WaitAll(tasksRunning.ToArray());
         }
 
@@ -57,7 +57,7 @@ namespace MatchingCore
             //mqRequest.BindReceived(MqInHandler);
             //mqOrderResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqOrderResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqOrderResponseQueueName"].ToString());
             //mqTxResponse = new RabbitMqOut(ConfigurationManager.AppSettings["RabbitMqTxResponseUri"].ToString(), ConfigurationManager.AppSettings["RabbitMqTxResponseQueueName"].ToString());
-            TcpServer.Server.StartListening(ConfigurationManager.AppSettings["RequestReceiverIP"].ToString(), int.Parse(ConfigurationManager.AppSettings["RequestReceiverPort"].ToString()));
+            RequestReceiver.Server.StartListening(ConfigurationManager.AppSettings["RequestReceiverIP"].ToString(), int.Parse(ConfigurationManager.AppSettings["RequestReceiverPort"].ToString()));
             tasksRunning.Add(Task.Factory.StartNew(() => HandleRequest(), TaskCreationOptions.LongRunning));
             for (int i = 0; i < 1; i++)
             {
@@ -97,14 +97,14 @@ namespace MatchingCore
         //    //mqRequest.MsgFinished(ea);
         //}
 
-        private void RejectResponse(byte[] bytes)
-        {
-            //reject incoming orders, since we hit the limit
-            var reject = ProcessOrderResult.ConstructRejectBuffer();
-            mqOrderResponse.Enqueue(reject.bytes);
-            ProcessOrderResult.CheckIn(reject);
-            //Interlocked.Increment(ref Rejps);
-        }
+        //private void RejectResponse(byte[] bytes)
+        //{
+        //    //reject incoming orders, since we hit the limit
+        //    var reject = ProcessOrderResult.ConstructRejectBuffer();
+        //    mqOrderResponse.Enqueue(reject.bytes);
+        //    ProcessOrderResult.CheckIn(reject);
+        //    //Interlocked.Increment(ref Rejps);
+        //}
 
         internal void HandleResponse()
         {
@@ -120,7 +120,8 @@ namespace MatchingCore
                         //request = ResponseQueue.Take(MatchingCoreSetup.Instance.cts.Token);
                         #region send order response to order handling RabbitMQ
                         // Code here before result is being recycled
-                        mqOrderResponse.Enqueue(request.result);
+                        //mqOrderResponse.Enqueue(request.result);
+                        RequestReceiver.Server.SendResponse(request.result);
                         #endregion
 
                         #region send transaction to transaction handling RabbitMQ
@@ -128,8 +129,9 @@ namespace MatchingCore
                         //Parallel.For(0, request.result.txList.Count, option, i =>
                         //Parallel.For(0, request.result.txList.Count, i =>
                         {
-                            mqTxResponse.Enqueue(request.result.txList[i]);
+                            //mqTxResponse.Enqueue(request.result.txList[i]);
                             //Interlocked.Increment(ref Tps);
+                            TxDistributor.Server.SendResponse(request.result.txList[i]);
                             TxPool.CheckIn(request.result.txList[i]);
                         }
                         //);

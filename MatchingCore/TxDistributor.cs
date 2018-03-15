@@ -1,36 +1,33 @@
-﻿using System;
+﻿using BaseHelper;
+using MatchingLib;
+using NLogHelper;
+using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using BaseHelper;
-using NLogHelper;
-using MatchingLib;
 
 namespace MatchingCore
 {
-    /// <summary>
-    /// Request Receiver
-    /// </summary>
-    internal class RequestReceiver
+    public class TxDistributor
     {
         /// <summary>
         /// Singleton
         /// </summary>
-        internal static RequestReceiver Server { get; } = new RequestReceiver();
-        TcpListener listener { get; set; }
+        public static TxDistributor Server { get; } = new TxDistributor();
+        private TcpListener listener { get; set; }
+        private List<Task> SenderTask { get; } = new List<Task>();
+        SpinQueue<BinaryObj> binObjQueue { get; } = new SpinQueue<BinaryObj>();
         private List<Task> ReceiverTasks { get; } = new List<Task>(10);
         private List<Task> SendTasks { get; } = new List<Task>(10);
         private List<TcpClient> ClientSockets { get; } = new List<TcpClient>(10);
-        private SpinQueue<BinaryObj> respQueue { get; } = new SpinQueue<BinaryObj>();
         private int ReceiveBufferSize { get; } = 512;
 
         internal void SendResponse(IBinaryProcess binProc)
         {
-            respQueue.Enqueue(binProc.ToBytes());
+            binObjQueue.Enqueue(binProc.ToBytes());
         }
         internal void StartListening(string ip, int port, int backlog = 1000)
         {
@@ -46,7 +43,7 @@ namespace MatchingCore
             {
                 NLogger.Instance.WriteLog(NLogger.LogLevel.Error, e.ToString());
             }
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver Listener started");
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor Listener started");
         }
 
         private void AcceptCallback(IAsyncResult ar)
@@ -59,7 +56,7 @@ namespace MatchingCore
             SendTasks.Add(Task.Factory.StartNew(() => SendTask(client)));
             listener.BeginAcceptTcpClient(AcceptCallback, listener);
             IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver new client connected from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor new client connected from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
         }
 
         private void SendTask(TcpClient client)
@@ -70,7 +67,7 @@ namespace MatchingCore
             {
                 try
                 {
-                    if (respQueue.TryDequeue(out binObj))
+                    if (binObjQueue.TryDequeue(out binObj))
                     {
                         // Read data from the client socket.   
                         stream.Write(binObj.bytes, 0, binObj.length);
@@ -81,7 +78,7 @@ namespace MatchingCore
                     NLogger.Instance.WriteLog(NLogger.LogLevel.Error, e.ToString());
                 }
             }
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver SendTask shutdown");
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor SendTask shutdown");
         }
 
         private void ReceiverTask(TcpClient client)
@@ -92,17 +89,8 @@ namespace MatchingCore
             {
                 try
                 {
-                    var rfcObj = ProcessRequest.Instance.GetRfcObj();
                     // Read data from the client socket.   
-                    int bytesRead = stream.Read(buffer, 0, 2);
-                    int len = BitConverter.ToInt16(buffer, 0);
-                    bytesRead = stream.Read(buffer, 2, len);
-
-                    if (bytesRead > 0)
-                    {
-                        rfcObj.FromBytes(buffer);
-                        ProcessRequest.Instance.ReceiveRequest(rfcObj);
-                    }
+                    int bytesRead = stream.Read(buffer, 0, buffer.Length);
                 }
                 catch (OperationCanceledException)
                 {
@@ -116,7 +104,7 @@ namespace MatchingCore
                     if (client != null && !client.Connected)
                     {
                         IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
-                        NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver socket closed from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
+                        NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor socket closed from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
                         client.Close();
                         GC.SuppressFinalize(client);
                         client = null;
@@ -125,7 +113,7 @@ namespace MatchingCore
                     }
                 }
             }
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver ReceiverTask shutdown");
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor ReceiverTask shutdown");
         }
 
         /// <summary>
@@ -133,7 +121,7 @@ namespace MatchingCore
         /// </summary>
         internal void Shutdown()
         {
-            foreach(var client in ClientSockets)
+            foreach (var client in ClientSockets)
             {
                 if (client != null && client.Connected)
                 {
@@ -143,7 +131,7 @@ namespace MatchingCore
             Task.WaitAll(ReceiverTasks.ToArray());
             Task.WaitAll(SendTasks.ToArray());
             listener.Stop();
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver shutdown");
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor shutdown");
         }
     }
 }
