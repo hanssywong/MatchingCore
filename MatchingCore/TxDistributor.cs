@@ -62,9 +62,9 @@ namespace MatchingCore
         private void SendTask(TcpClient client)
         {
             NetworkStream stream = client.GetStream();
-            BinaryObj binObj = null;
             while (client.Connected)
             {
+                BinaryObj binObj = null;
                 try
                 {
                     if (binObjQueue.TryDequeue(out binObj))
@@ -76,6 +76,14 @@ namespace MatchingCore
                 catch (Exception e)
                 {
                     NLogger.Instance.WriteLog(NLogger.LogLevel.Error, e.ToString());
+                }
+                finally
+                {
+                    if (binObj != null)
+                    {
+                        binObj.ResetOjb();
+                        BinaryObjPool.Checkin(binObj);
+                    }
                 }
             }
             NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "TxDistributor SendTask shutdown");
