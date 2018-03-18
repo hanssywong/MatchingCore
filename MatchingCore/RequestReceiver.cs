@@ -22,6 +22,7 @@ namespace MatchingCore
         /// </summary>
         internal static RequestReceiver Server { get; } = new RequestReceiver();
         TcpListener listener { get; set; }
+        private Task AcceptTask { get; set; }
         private List<Task> ReceiverTasks { get; } = new List<Task>(10);
         private List<Task> SendTasks { get; } = new List<Task>(10);
         private List<TcpClient> ClientSockets { get; } = new List<TcpClient>(10);
@@ -39,8 +40,9 @@ namespace MatchingCore
             // Bind the socket to the local endpoint and listen for incoming connections.  
             try
             {
-                listener.BeginAcceptTcpClient(AcceptCallback, listener);
                 listener.Start(backlog);
+                AcceptTask = Task.Factory.StartNew(() => AcceptClientTask());
+                //listener.BeginAcceptTcpClient(AcceptCallback, listener);
             }
             catch (Exception e)
             {
@@ -49,24 +51,30 @@ namespace MatchingCore
             NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver Listener started");
         }
 
-        private void AcceptCallback(IAsyncResult ar)
+        //private void AcceptCallback(IAsyncResult ar)
+        private void AcceptClientTask()
         {
-            // Get the socket that handles the client request.  
-            //Socket listener = (Socket)ar.AsyncState;
-            TcpClient client = listener.EndAcceptTcpClient(ar);
-            ClientSockets.Add(client);
-            ReceiverTasks.Add(Task.Factory.StartNew(() => ReceiverTask(client)));
-            SendTasks.Add(Task.Factory.StartNew(() => SendTask(client)));
-            listener.BeginAcceptTcpClient(AcceptCallback, listener);
-            IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
-            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver new client connected from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
+            while (!MatchingCoreSetup.Instance.cts.IsCancellationRequested)
+            {
+                // Get the socket that handles the client request.  
+                //Socket listener = (Socket)ar.AsyncState;
+                TcpClient client = listener.AcceptTcpClient();//.EndAcceptTcpClient(ar);
+                ClientSockets.Add(client);
+                ReceiverTasks.Add(Task.Factory.StartNew(() => ReceiverTask(client)));
+                SendTasks.Add(Task.Factory.StartNew(() => SendTask(client)));
+                //listener.BeginAcceptTcpClient(AcceptCallback, listener);
+                IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
+                NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "AcceptClientTask new client connected from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
+            }
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "AcceptClientTask shutdown");
         }
 
         private void SendTask(TcpClient client)
         {
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver SendTask start");
             NetworkStream stream = client.GetStream();
             BinaryObj binObj = null;
-            while (client.Connected)
+            while (client != null && client.Connected)
             {
                 try
                 {
@@ -86,22 +94,45 @@ namespace MatchingCore
 
         private void ReceiverTask(TcpClient client)
         {
+            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver ReceiverTask start");
+            var prevbuff = new byte[ReceiveBufferSize];
             var buffer = new byte[ReceiveBufferSize];
+            var errorbuffer = new byte[1024*1024];
             NetworkStream stream = client.GetStream();
-            while (client.Connected)
+            while (client != null && client.Connected)
             {
+                RequestFromClient rfcObj = null;
+                int bytesRead = 0;
+                int len = 0;
                 try
                 {
-                    var rfcObj = ProcessRequest.Instance.GetRfcObj();
+                    rfcObj = ProcessRequest.Instance.GetRfcObj();
                     // Read data from the client socket.   
-                    int bytesRead = stream.Read(buffer, 0, 2);
-                    int len = BitConverter.ToInt16(buffer, 0);
-                    bytesRead = stream.Read(buffer, 2, len);
+                    bytesRead = stream.Read(buffer, 0, 2);
 
                     if (bytesRead > 0)
                     {
+                        bytesRead = 0;
+                        len = BitConverter.ToInt16(buffer, 0);
+                        if (len > ReceiveBufferSize)
+                        {
+                            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "len:" + len);
+                            Array.Copy(buffer, errorbuffer, 2);
+                            bytesRead = stream.Read(errorbuffer, 2, len - 2);
+                            NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "errorbuffer:" + BitConverter.ToString(errorbuffer, 0, len));
+                            continue;
+                        }
+                        else
+                        {
+                            bytesRead = stream.Read(buffer, 2, len - 2);
+                        }
                         rfcObj.FromBytes(buffer);
                         ProcessRequest.Instance.ReceiveRequest(rfcObj);
+                    }
+                    else
+                    {
+                        if (client.Connected)
+                            client.Client.Shutdown(SocketShutdown.Send);
                     }
                 }
                 catch (OperationCanceledException)
@@ -109,12 +140,14 @@ namespace MatchingCore
                 }
                 catch (Exception e)
                 {
+                    NLogger.Instance.WriteLog(NLogger.LogLevel.Error, "buffer:" + BitConverter.ToString(buffer, 0, len));
                     NLogger.Instance.WriteLog(NLogger.LogLevel.Error, e.ToString());
                 }
                 finally
                 {
                     if (client != null && !client.Connected)
                     {
+                        ClientSockets.Remove(client);
                         IPEndPoint remoteIpEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
                         NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver socket closed from IP:" + remoteIpEndPoint?.Address + ", port:" + remoteIpEndPoint?.Port);
                         client.Close();
@@ -122,7 +155,12 @@ namespace MatchingCore
                         client = null;
                         stream.Close();
                         GC.SuppressFinalize(stream);
+                        respQueue.ManualFreeBlocking();
                     }
+                    //Array.Clear(prevbuff, 0, prevbuff.Length);
+                    //Array.Copy(buffer, prevbuff, buffer.Length);
+                    //Array.Clear(buffer, 0, buffer.Length);
+                    //Array.Clear(errorbuffer, 0, errorbuffer.Length);
                 }
             }
             NLogger.Instance.WriteLog(NLogger.LogLevel.Info, "RequestReceiver ReceiverTask shutdown");

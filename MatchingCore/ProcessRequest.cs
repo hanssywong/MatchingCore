@@ -29,7 +29,7 @@ namespace MatchingCore
         /// <summary>
         /// Request per second
         /// </summary>
-        //long Rps = 0;
+        int Rps = 0;
         /// <summary>
         /// Tx per second
         /// </summary>
@@ -69,6 +69,7 @@ namespace MatchingCore
         internal void ReceiveRequest(RequestFromClient rfcObj)
         {
             RequestQueue.Enqueue(rfcObj);
+            Rps++;
         }
 
         internal RequestFromClient GetRfcObj()
@@ -279,6 +280,8 @@ namespace MatchingCore
                     Console.WriteLine("RequestQueue.QueueCount:" + RequestQueue.QueueCount);
                     Console.WriteLine("ResponseQueue.bWritingQueueA:" + ResponseQueue.bWritingQueueA);
                     Console.WriteLine("ResponseQueue.QueueCount:" + ResponseQueue.QueueCount);
+                    var tmp3 = Interlocked.Exchange(ref Rps, 0);
+                    Console.WriteLine("Rps:" + tmp3);
                     //ops = 0;
                     //createTicks = 0;
                     //removeKeysTicks = 0;

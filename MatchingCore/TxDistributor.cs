@@ -36,8 +36,8 @@ namespace MatchingCore
             // Bind the socket to the local endpoint and listen for incoming connections.  
             try
             {
-                listener.BeginAcceptTcpClient(AcceptCallback, listener);
                 listener.Start(backlog);
+                listener.BeginAcceptTcpClient(AcceptCallback, listener);
             }
             catch (Exception e)
             {
@@ -51,6 +51,7 @@ namespace MatchingCore
             // Get the socket that handles the client request.  
             //Socket listener = (Socket)ar.AsyncState;
             TcpClient client = listener.EndAcceptTcpClient(ar);
+            client.NoDelay = true;
             ClientSockets.Add(client);
             ReceiverTasks.Add(Task.Factory.StartNew(() => ReceiverTask(client)));
             SendTasks.Add(Task.Factory.StartNew(() => SendTask(client)));
@@ -62,7 +63,7 @@ namespace MatchingCore
         private void SendTask(TcpClient client)
         {
             NetworkStream stream = client.GetStream();
-            while (client.Connected)
+            while (client != null && client.Connected)
             {
                 BinaryObj binObj = null;
                 try
@@ -71,6 +72,7 @@ namespace MatchingCore
                     {
                         // Read data from the client socket.   
                         stream.Write(binObj.bytes, 0, binObj.length);
+                        stream.Flush();
                     }
                 }
                 catch (Exception e)
@@ -93,12 +95,17 @@ namespace MatchingCore
         {
             var buffer = new byte[ReceiveBufferSize];
             NetworkStream stream = client.GetStream();
-            while (client.Connected)
+            while (client != null && client.Connected)
             {
                 try
                 {
                     // Read data from the client socket.   
                     int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                    if (bytesRead <= 0)
+                    {
+                        if (client.Connected)
+                            client.Client.Shutdown(SocketShutdown.Send);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -118,6 +125,8 @@ namespace MatchingCore
                         client = null;
                         stream.Close();
                         GC.SuppressFinalize(stream);
+                        stream = null;
+                        binObjQueue.ManualFreeBlocking();
                     }
                 }
             }
