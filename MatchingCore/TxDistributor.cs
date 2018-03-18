@@ -126,7 +126,7 @@ namespace MatchingCore
                         stream.Close();
                         GC.SuppressFinalize(stream);
                         stream = null;
-                        binObjQueue.ManualFreeBlocking();
+                        binObjQueue.ReleaseBlocking();
                     }
                 }
             }

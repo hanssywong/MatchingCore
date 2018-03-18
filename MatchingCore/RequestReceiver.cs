@@ -155,7 +155,7 @@ namespace MatchingCore
                         client = null;
                         stream.Close();
                         GC.SuppressFinalize(stream);
-                        respQueue.ManualFreeBlocking();
+                        respQueue.ReleaseBlocking();
                     }
                     //Array.Clear(prevbuff, 0, prevbuff.Length);
                     //Array.Copy(buffer, prevbuff, buffer.Length);
